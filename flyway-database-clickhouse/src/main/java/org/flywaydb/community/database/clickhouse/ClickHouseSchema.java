@@ -20,11 +20,12 @@ import org.flywaydb.core.internal.jdbc.JdbcTemplate;
 import org.flywaydb.core.internal.util.StringUtils;
 
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 
 public class ClickHouseSchema extends Schema<ClickHouseDatabase, ClickHouseTable> {
 
-    private static final String DEFAULT_SCHEMA = "default";
+    public static final String SYSTEM_SCHEMA = "system";
 
     /**
      * @param jdbcTemplate The Jdbc Template for communicating with the DB.
@@ -37,30 +38,34 @@ public class ClickHouseSchema extends Schema<ClickHouseDatabase, ClickHouseTable
 
     @Override
     protected boolean doExists() throws SQLException {
-        ClickHouseConnection systemConnection = database.getSystemConnection();
-        int i = systemConnection.getJdbcTemplate().queryForInt("SELECT COUNT() FROM system.databases WHERE name = ?", name);
+        database.useSchema(SYSTEM_SCHEMA);
+        int i = jdbcTemplate.queryForInt("SELECT COUNT() FROM system.databases WHERE name = ?", name);
+        database.restoreOriginalSchema();
         return i > 0;
     }
 
     @Override
     protected boolean doEmpty() throws SQLException {
-        ClickHouseConnection systemConnection = database.getSystemConnection();
-        int i = systemConnection.getJdbcTemplate().queryForInt("SELECT COUNT() FROM system.tables WHERE database = ?", name);
+        database.useSchema(SYSTEM_SCHEMA);
+        int i = jdbcTemplate.queryForInt("SELECT COUNT() FROM system.tables WHERE database = ?", name);
+        database.restoreOriginalSchema();
         return i == 0;
     }
 
     @Override
     protected void doCreate() throws SQLException {
-        ClickHouseConnection systemConnection = database.getSystemConnection();
+        database.useSchema(SYSTEM_SCHEMA);
         String clusterName = database.getClusterName();
         boolean isClustered = StringUtils.hasText(clusterName);
-        systemConnection.getJdbcTemplate().executeStatement("CREATE DATABASE " + database.quote(name) + (isClustered ? (" ON CLUSTER " + clusterName) : ""));
+        jdbcTemplate.executeStatement("CREATE DATABASE " + database.quote(name) + (isClustered ? (" ON CLUSTER " + clusterName) : ""));
+        database.restoreOriginalSchema();
     }
 
     @Override
     protected void doDrop() throws SQLException {
         if (database.getMainConnection().getCurrentSchemaNameOrSearchPath().equals(name)) {
-            database.getMainConnection().doChangeCurrentSchemaOrSearchPathTo(Optional.ofNullable(database.getConfiguration().getDefaultSchema()).orElse(DEFAULT_SCHEMA));
+            String schema = Optional.ofNullable(database.getConfiguration().getDefaultSchema()).orElse(SYSTEM_SCHEMA);
+            database.useSchema(schema);
         }
         String clusterName = database.getClusterName();
         boolean isClustered = StringUtils.hasText(clusterName);
@@ -76,9 +81,10 @@ public class ClickHouseSchema extends Schema<ClickHouseDatabase, ClickHouseTable
 
     @Override
     protected ClickHouseTable[] doAllTables() throws SQLException {
-        ClickHouseConnection systemConnection = database.getSystemConnection();
-        return systemConnection.getJdbcTemplate().queryForStringList("SELECT name FROM system.tables WHERE database = ?", name)
-                .stream()
+        database.useSchema(SYSTEM_SCHEMA);
+        List<String> tables = jdbcTemplate.queryForStringList("SELECT name FROM system.tables WHERE database = ?", name);
+        database.restoreOriginalSchema();
+        return tables.stream()
                 .map(this::getTable)
                 .toArray(ClickHouseTable[]::new);
     }

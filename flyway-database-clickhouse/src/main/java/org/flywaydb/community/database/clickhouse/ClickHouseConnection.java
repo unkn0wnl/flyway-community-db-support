@@ -50,6 +50,10 @@ public class ClickHouseConnection extends Connection<ClickHouseDatabase> {
         }
     }
 
+    protected String getOriginalSchema() {
+        return originalSchemaNameOrSearchPath;
+    }
+
     protected boolean useCatalog(java.sql.Connection jdbcConnection) throws SQLException {
         return DEFAULT_CATALOG_TERM.equals(jdbcConnection.getMetaData().getCatalogTerm());
     }
