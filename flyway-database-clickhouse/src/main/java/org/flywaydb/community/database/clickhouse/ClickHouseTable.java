@@ -43,10 +43,13 @@ public class ClickHouseTable extends Table<ClickHouseDatabase, ClickHouseSchema>
 
     @Override
     protected boolean doExists() throws SQLException {
-        database.useSchema(ClickHouseSchema.SYSTEM_SCHEMA);
-        int count = jdbcTemplate.queryForInt("SELECT COUNT() FROM system.tables WHERE database = ? AND name = ?", schema.getName(), name);
-        database.restoreOriginalSchema();
-        return count > 0;
+        try {
+            database.useSchema(ClickHouseSchema.SYSTEM_SCHEMA);
+            int count = jdbcTemplate.queryForInt("SELECT COUNT() FROM system.tables WHERE database = ? AND name = ?", schema.getName(), name);
+            return count > 0;
+        } finally {
+            database.restoreOriginalSchema();
+        }
     }
 
     @Override
