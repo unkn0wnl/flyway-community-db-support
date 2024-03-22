@@ -24,7 +24,8 @@ import java.util.Optional;
 
 public class ClickHouseSchema extends Schema<ClickHouseDatabase, ClickHouseTable> {
 
-    private static final String DEFAULT_SCHEMA = "default";
+    public static final String DEFAULT_SCHEMA = "default";
+    public static final String SYSTEM_SCHEMA = "system";
 
     /**
      * @param jdbcTemplate The Jdbc Template for communicating with the DB.
@@ -37,24 +38,21 @@ public class ClickHouseSchema extends Schema<ClickHouseDatabase, ClickHouseTable
 
     @Override
     protected boolean doExists() throws SQLException {
-        ClickHouseConnection systemConnection = database.getSystemConnection();
-        int i = systemConnection.getJdbcTemplate().queryForInt("SELECT COUNT() FROM system.databases WHERE name = ?", name);
+        int i = database.executeInSchema(SYSTEM_SCHEMA, template -> template.queryForInt("SELECT COUNT() FROM system.databases WHERE name = ?", name));
         return i > 0;
     }
 
     @Override
     protected boolean doEmpty() throws SQLException {
-        ClickHouseConnection systemConnection = database.getSystemConnection();
-        int i = systemConnection.getJdbcTemplate().queryForInt("SELECT COUNT() FROM system.tables WHERE database = ?", name);
+        int i = database.executeInSchema(SYSTEM_SCHEMA, template -> template.queryForInt("SELECT COUNT() FROM system.tables WHERE database = ?", name));
         return i == 0;
     }
 
     @Override
     protected void doCreate() throws SQLException {
-        ClickHouseConnection systemConnection = database.getSystemConnection();
         String clusterName = database.getClusterName();
         boolean isClustered = StringUtils.hasText(clusterName);
-        systemConnection.getJdbcTemplate().executeStatement("CREATE DATABASE " + database.quote(name) + (isClustered ? (" ON CLUSTER " + clusterName) : ""));
+        database.executeInSchema(SYSTEM_SCHEMA, template -> template.executeStatement("CREATE DATABASE " + database.quote(name) + (isClustered ? (" ON CLUSTER " + clusterName) : "")));
     }
 
     @Override
@@ -76,8 +74,7 @@ public class ClickHouseSchema extends Schema<ClickHouseDatabase, ClickHouseTable
 
     @Override
     protected ClickHouseTable[] doAllTables() throws SQLException {
-        ClickHouseConnection systemConnection = database.getSystemConnection();
-        return systemConnection.getJdbcTemplate().queryForStringList("SELECT name FROM system.tables WHERE database = ?", name)
+        return database.executeInSchema(SYSTEM_SCHEMA, template -> template.queryForStringList("SELECT name FROM system.tables WHERE database = ?", name))
                 .stream()
                 .map(this::getTable)
                 .toArray(ClickHouseTable[]::new);

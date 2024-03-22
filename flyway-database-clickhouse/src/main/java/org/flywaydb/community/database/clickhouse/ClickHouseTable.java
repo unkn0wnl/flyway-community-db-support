@@ -43,8 +43,7 @@ public class ClickHouseTable extends Table<ClickHouseDatabase, ClickHouseSchema>
 
     @Override
     protected boolean doExists() throws SQLException {
-        ClickHouseConnection systemConnection = database.getSystemConnection();
-        int count = systemConnection.getJdbcTemplate().queryForInt("SELECT COUNT() FROM system.tables WHERE database = ? AND name = ?", schema.getName(), name);
+        int count = database.executeInSchema(ClickHouseSchema.SYSTEM_SCHEMA, template -> template.queryForInt("SELECT COUNT() FROM system.tables WHERE database = ? AND name = ?", schema.getName(), name));
         return count > 0;
     }
 

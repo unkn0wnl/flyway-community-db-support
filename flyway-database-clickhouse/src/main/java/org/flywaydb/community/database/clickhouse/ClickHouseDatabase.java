@@ -18,8 +18,8 @@ package org.flywaydb.community.database.clickhouse;
 import org.flywaydb.core.api.configuration.Configuration;
 import org.flywaydb.core.internal.database.base.Database;
 import org.flywaydb.core.internal.database.base.Table;
-import org.flywaydb.core.internal.exception.FlywaySqlException;
 import org.flywaydb.core.internal.jdbc.JdbcConnectionFactory;
+import org.flywaydb.core.internal.jdbc.JdbcTemplate;
 import org.flywaydb.core.internal.jdbc.StatementInterceptor;
 import org.flywaydb.core.internal.util.StringUtils;
 
@@ -27,8 +27,6 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 public class ClickHouseDatabase extends Database<ClickHouseConnection> {
-
-    private ClickHouseConnection systemConnection;
 
     @Override
     public boolean useSingleConnection() {
@@ -47,23 +45,16 @@ public class ClickHouseDatabase extends Database<ClickHouseConnection> {
         return configuration.getPluginRegister().getPlugin(ClickHouseConfigurationExtension.class).getZookeeperPath();
     }
 
-    public ClickHouseConnection getSystemConnection() {
-        // Queries on system.XX fail with "Code: 81. DB::Exception: Database the_database doesn't exist. (UNKNOWN_DATABASE) (version 23.7.1.2470 (official build))"
-        // in case the current catalog (database) is not yet created.
-        // For this reason, we switch to an existing DB before execution. The database might not have been created yet, so we cannot reliably switch back the Schema.
-        //  * mainConnection cannot be used, as this would change the location of the schema history table.
-        //  * jdbcTemplate cannot be used, as this would change the location of the new tables.
-        // We had to introduce a separate connection, reserved to system database access.
-        if (systemConnection == null) {
-            Connection connection = jdbcConnectionFactory.openConnection();
-            try {
-                systemConnection = doGetConnection(connection);
-                systemConnection.doChangeCurrentSchemaOrSearchPathTo("system");
-            } catch (SQLException e) {
-                throw new FlywaySqlException("Unable to switch connection to read-only", e);
-            }
+    public <T> T executeInSchema(String schemaName, FunctionSqlEx<JdbcTemplate, T> callback) throws SQLException {
+        ClickHouseConnection mainConnection = getMainConnection();
+        String originalSchema = mainConnection.getCurrentSchemaNameOrSearchPath();
+
+        try {
+            mainConnection.doChangeCurrentSchemaOrSearchPathTo(schemaName);
+            return callback.apply(mainConnection.getJdbcTemplate());
+        } finally {
+            mainConnection.doChangeCurrentSchemaOrSearchPathTo(originalSchema);
         }
-        return systemConnection;
     }
 
     @Override
